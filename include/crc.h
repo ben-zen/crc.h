@@ -31,14 +31,15 @@ namespace crc
         using table_t = array_wrapper<crc_t, table_size>;   // C++14
 
     private:
+        static constexpr crc_t sb_mask = 1 << (VSize - 1);
+        static constexpr crc_t full_mask = VSize < sizeof(crc_t) * 8 ? (static_cast<crc_t>(1) << VSize) - 1 : ~static_cast<crc_t>(0);
+
         crc_t current;
 
         static constexpr table_t calc_table()
         {
             table_t table{};
             table[0] = 0;
-            constexpr crc_t sb_mask = 1 << (size - 1);
-            constexpr crc_t full_mask = size < sizeof(crc_t) * 8 ? (static_cast<crc_t>(1) << size) - 1 : ~static_cast<crc_t>(0);
             crc_t crc = sb_mask;
             for (auto i = 1; i < table_size; i <<= 1)
             {
@@ -117,7 +118,7 @@ namespace crc
                 //assert(data < table_size);
                 const auto data_byte = static_cast<uint8_t>(data);
                 const auto offs = data_byte ^ (current >> shift);
-                current = (current << 8) ^ table[offs];
+                current = ((current << 8) ^ table[offs]) & full_mask;
             }
             //current ^= final_xor;
             auto result = current;
