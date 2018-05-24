@@ -17,22 +17,29 @@ namespace crc
         constexpr size_t size() const { return VSize; }
     };
 
-    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor>
+    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, size_t VDataSize = sizeof(TCrc)*8>
     class crc_base
     {
-        static_assert(VSize <= sizeof(TCrc) * 8, "CRC size can't be greater than the size of the data type");
+        static_assert(VSize <= VDataSize, "CRC size can't be greater than the size of the data type");
         static_assert(VSize > 0, "CRC size must be greater than 0");
         static_assert(VSize % 8 == 0, "CRC size must be a multiple of 8");
 
     public:
         static constexpr size_t table_size = 256;
+
         using crc_t = TCrc;
         //using table_t = std::array<crc_t, table_size>;    // C++17
         using table_t = array_wrapper<crc_t, table_size>;   // C++14
 
+        static constexpr size_t size = VSize;
+        static constexpr crc_t polynomial = VPolynomial;
+        static constexpr crc_t initial = VInitial;
+        static constexpr crc_t final_xor = VFinalXor;
+        static constexpr size_t data_size = VDataSize;
+
     private:
-        static constexpr crc_t sb_mask = 1 << (VSize - 1);
-        static constexpr crc_t full_mask = VSize < sizeof(crc_t) * 8 ? (static_cast<crc_t>(1) << VSize) - 1 : ~static_cast<crc_t>(0);
+        static constexpr crc_t sb_mask = 1 << (size - 1);
+        static constexpr crc_t full_mask = size < data_size ? (static_cast<crc_t>(1) << size) - 1 : ~static_cast<crc_t>(0);
 
         crc_t current;
 
@@ -62,13 +69,8 @@ namespace crc
         }
 
     public:
-        static constexpr size_t size = VSize;
-        static constexpr crc_t polynomial = VPolynomial;
-        static constexpr crc_t initial = VInitial;
-        static constexpr crc_t final_xor = VFinalXor;
         static constexpr table_t table = calc_table();
 
-    public:
         constexpr void set(crc_t new_val)
         {
             current = new_val;
