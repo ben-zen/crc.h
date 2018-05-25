@@ -17,7 +17,7 @@ namespace crc
         constexpr size_t size() const { return VSize; }
     };
 
-    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, size_t VDataSize = sizeof(TCrc)*8>
+    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput, size_t VDataSize = sizeof(TCrc)*8>
     class crc_base
     {
         static_assert(VSize <= VDataSize, "CRC size can't be greater than the size of the data type");
@@ -35,22 +35,47 @@ namespace crc
         static constexpr crc_t polynomial = VPolynomial;
         static constexpr crc_t initial = VInitial;
         static constexpr crc_t final_xor = VFinalXor;
+        static constexpr bool reflect_input = VReflectInput;
+        static constexpr bool reflect_output = VReflectOutput;
         static constexpr size_t data_size = VDataSize;
 
     private:
-        static constexpr crc_t sb_mask = 1 << (size - 1);
+        static constexpr crc_t msb_mask = 1 << (size - 1);
         static constexpr crc_t full_mask = size < data_size ? (static_cast<crc_t>(1) << size) - 1 : ~static_cast<crc_t>(0);
 
         crc_t current;
+
+        static constexpr uint8_t reflect_byte(uint8_t b)
+        {
+            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+            b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+            b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+            return b;
+        }
+
+        static constexpr crc_t reflect_crc(crc_t crc)
+        {
+            crc_t reflected = 0;
+            for(auto i = 0; i < size; i += 8)
+            {
+                auto byte = static_cast<uint8_t>(crc & 0xFF);
+                auto reflected_byte = reflect_byte(byte);
+                //reflected |= reflected_byte << i;
+                reflected <<= 8;
+                reflected |= reflected_byte;
+                crc >>= 8;
+            }
+            return reflected;
+        }
 
         static constexpr table_t calc_table()
         {
             table_t table{};
             table[0] = 0;
-            crc_t crc = sb_mask;
+            crc_t crc = msb_mask;
             for (auto i = 1; i < table_size; i <<= 1)
             {
-                if (crc & sb_mask)
+                if (crc & msb_mask)
                 {
                     crc <<= 1;
                     crc ^= polynomial;
@@ -65,6 +90,19 @@ namespace crc
                     table[i + j] = crc ^ table[j];
                 }
             }
+
+            if (reflect_input)
+            {
+                table_t refl{};
+                for (auto i = 0; i < table_size; ++i)
+                {
+                    auto refl_offset = reflect_byte(static_cast<uint8_t>(i));
+                    auto refl_entry = reflect_crc(table[refl_offset]);
+                    refl[i] = refl_entry;
+                }
+                return refl;
+            }
+
             return table;
         }
 
@@ -78,7 +116,8 @@ namespace crc
 
         constexpr void reset()
         {
-            set(initial);
+            constexpr crc_t new_val = reflect_input ? reflect_crc(initial) : initial;
+            set(new_val);
         }
 
         constexpr crc_base() : current()
@@ -113,18 +152,33 @@ namespace crc
         template<typename TIt>
         crc_t compute_checksum(const TIt begin, const TIt end)
         {
-            constexpr auto shift = size - 8;
-            for (auto it = begin; it != end; ++it)
+            if (reflect_input)
             {
-                const auto& data = *it;
-                //assert(data < table_size);
-                const auto data_byte = static_cast<uint8_t>(data);
-                const auto offs = data_byte ^ (current >> shift);
-                current = ((current << 8) ^ table[offs]) & full_mask;
+                for (auto it = begin; it != end; ++it)
+                {
+                    const auto data_byte = static_cast<uint8_t>(*it);
+                    const auto offs = data_byte ^ (current & 0xFF);
+                    current = ((current >> 8) ^ table[offs]) & full_mask;
+                }
             }
-            //current ^= final_xor;
+            else
+            {
+                constexpr auto shift = size - 8;
+                for (auto it = begin; it != end; ++it)
+                {
+                    const auto data_byte = static_cast<uint8_t>(*it);
+                    const auto offs = data_byte ^ (current >> shift);
+                    current = ((current << 8) ^ table[offs]) & full_mask;
+                }
+            }
+
             auto result = current;
             result ^= final_xor;
+            constexpr auto do_reflect_output = reflect_input ^ reflect_output;
+            if(do_reflect_output)
+            {
+                result = reflect_crc(result);
+            }
             return result;
         }
     };
