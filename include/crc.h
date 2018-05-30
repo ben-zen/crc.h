@@ -38,11 +38,11 @@ namespace crc
         static constexpr crc_t expected_check = VExpectedCheck;
 
     private:
-        static constexpr crc_t msb_mask = 1 << (size - 1);
+        static constexpr crc_t msb_mask = static_cast<crc_t>(static_cast<crc_t>(1) << (size - 1));
         static constexpr crc_t full_mask = static_cast<crc_t>((static_cast<crc_t>(1) << size) - 1);
 
         static_assert(size > 0, "CRC size must be greater than 0");
-        static_assert(static_cast<crc_t>(static_cast<crc_t>(1) << (size - 1)) != 0, "The provided data type can't fit the CRC size requested");
+        static_assert(msb_mask != 0, "The provided data type can't fit the CRC size requested");
         static_assert((polynomial & full_mask) == polynomial, "Polynomial is larger than the specified CRC size");
         static_assert((initial & full_mask) == initial, "Initial value is larger than the specified CRC size");
         static_assert((final_xor & full_mask) == final_xor, "Final xor value is larger than the specified CRC size");
@@ -137,7 +137,7 @@ namespace crc
             }
             else
             {
-                constexpr int shift = size - 8;
+                constexpr auto shift = static_cast<int32_t>(size) - 8;
                 if (shift < 0)
                 {
                     for (auto it = begin; it != end; ++it)
