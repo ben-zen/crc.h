@@ -20,10 +20,6 @@ namespace crc
     template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput, size_t VDataSize = sizeof(TCrc)*8>
     class crc_base
     {
-        static_assert(VSize <= VDataSize, "CRC size can't be greater than the size of the data type");
-        static_assert(VSize > 0, "CRC size must be greater than 0");
-        static_assert(VSize % 8 == 0, "CRC size must be a multiple of 8");
-
     public:
         static constexpr size_t table_size = 256;
 
@@ -43,14 +39,30 @@ namespace crc
         static constexpr crc_t msb_mask = 1 << (size - 1);
         static constexpr crc_t full_mask = size < data_size ? (static_cast<crc_t>(1) << size) - 1 : ~static_cast<crc_t>(0);
 
+        static_assert(size <= data_size, "CRC size can't be greater than the size of the data type");
+        static_assert(size > 0, "CRC size must be greater than 0");
+        static_assert((polynomial & full_mask) == polynomial, "Polynomial is larger than the specified CRC size");
+        static_assert((initial & full_mask) == initial, "Initial value is larger than the specified CRC size");
+        static_assert((final_xor & full_mask) == final_xor, "Final xor value is larger than the specified CRC size");
+        //static_assert(size % 8 == 0, "CRC size must be a multiple of 8");
+
         crc_t current;
 
         static constexpr uint8_t reflect_byte(uint8_t b)
         {
-            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+            uint8_t result = 0;
+            for(auto i = 0; i < 8; ++i)
+            {
+                result <<= 1;
+                result |= (b & 1);
+                b >>= 1;
+            }
+            return result;
+            
+            /*b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
             b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
             b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-            return b;
+            return b;*/
         }
 
         static constexpr crc_t reflect_crc(crc_t crc)
@@ -157,28 +169,40 @@ namespace crc
                 for (auto it = begin; it != end; ++it)
                 {
                     const auto data_byte = static_cast<uint8_t>(*it);
-                    const auto offs = data_byte ^ (current & 0xFF);
+                    const auto offs = data_byte ^ ((current) & 0xFF);
                     current = ((current >> 8) ^ table[offs]) & full_mask;
                 }
             }
             else
             {
-                constexpr auto shift = size - 8;
-                for (auto it = begin; it != end; ++it)
+                constexpr int shift = size - 8;
+                if(shift < 0)
                 {
-                    const auto data_byte = static_cast<uint8_t>(*it);
-                    const auto offs = data_byte ^ (current >> shift);
-                    current = ((current << 8) ^ table[offs]) & full_mask;
+                    for (auto it = begin; it != end; ++it)
+                    {
+                        const auto data_byte = static_cast<uint8_t>(*it);
+                        const auto offs = data_byte ^ (current << -shift);
+                        current = ((current << 8) ^ table[offs]) & full_mask;
+                    }
+                }
+                else
+                {
+                    for (auto it = begin; it != end; ++it)
+                    {
+                        const auto data_byte = static_cast<uint8_t>(*it);
+                        const auto offs = data_byte ^ (current >> shift);
+                        current = ((current << 8) ^ table[offs]) & full_mask;
+                    }
                 }
             }
 
             auto result = current;
-            result ^= final_xor;
             constexpr auto do_reflect_output = reflect_input ^ reflect_output;
             if(do_reflect_output)
             {
                 result = reflect_crc(result);
             }
+            result ^= final_xor;
             return result;
         }
     };
