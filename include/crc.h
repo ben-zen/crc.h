@@ -17,7 +17,7 @@ namespace crc
         constexpr size_t size() const { return VSize; }
     };
 
-    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput, size_t VDataSize = sizeof(TCrc)*8>
+    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput>
     class crc_base
     {
     public:
@@ -33,36 +33,35 @@ namespace crc
         static constexpr crc_t final_xor = VFinalXor;
         static constexpr bool reflect_input = VReflectInput;
         static constexpr bool reflect_output = VReflectOutput;
-        static constexpr size_t data_size = VDataSize;
 
     private:
         static constexpr crc_t msb_mask = 1 << (size - 1);
-        static constexpr crc_t full_mask = size < data_size ? (static_cast<crc_t>(1) << size) - 1 : ~static_cast<crc_t>(0);
+        static constexpr crc_t full_mask = static_cast<crc_t>((static_cast<crc_t>(1) << size) - 1);
 
-        static_assert(size <= data_size, "CRC size can't be greater than the size of the data type");
+        static_assert(static_cast<crc_t>(static_cast<crc_t>(1) << (size - 1)) != 0, "The provided data type can't fit the CRC size requested");
         static_assert(size > 0, "CRC size must be greater than 0");
         static_assert((polynomial & full_mask) == polynomial, "Polynomial is larger than the specified CRC size");
         static_assert((initial & full_mask) == initial, "Initial value is larger than the specified CRC size");
         static_assert((final_xor & full_mask) == final_xor, "Final xor value is larger than the specified CRC size");
-        //static_assert(size % 8 == 0, "CRC size must be a multiple of 8");
+        static_assert((!reflect_input && !reflect_output) || (size % 8 == 0), "Calculating reflected checksums for non-multiples of 8 currently not supported");
 
         crc_t current;
 
         static constexpr uint8_t reflect_byte(uint8_t b)
         {
-            uint8_t result = 0;
+            /*uint8_t result = 0;
             for(auto i = 0; i < 8; ++i)
             {
                 result <<= 1;
                 result |= (b & 1);
                 b >>= 1;
             }
-            return result;
+            return result;*/
             
-            /*b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+            b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
             b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
             b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-            return b;*/
+            return b;
         }
 
         static constexpr crc_t reflect_crc(crc_t crc)
