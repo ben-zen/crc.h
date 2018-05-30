@@ -13,11 +13,12 @@ namespace crc
         constexpr const T& operator[] (const size_t index) const { return data[index]; }
         constexpr T* begin() { return std::begin(data); }
         constexpr const T* cbegin() const { return std::cbegin(data); }
+        constexpr T* end() { return std::end(data); }
         constexpr const T* cend() const { return std::cend(data); }
         constexpr size_t size() const { return VSize; }
     };
 
-    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput>
+    template<typename TCrc, size_t VSize, TCrc VPolynomial, TCrc VInitial, TCrc VFinalXor, bool VReflectInput, bool VReflectOutput, bool VDoCheck = false, TCrc VExpectedCheck = 0>
     class crc_base
     {
     public:
@@ -33,6 +34,8 @@ namespace crc
         static constexpr crc_t final_xor = VFinalXor;
         static constexpr bool reflect_input = VReflectInput;
         static constexpr bool reflect_output = VReflectOutput;
+        static constexpr bool do_check = VDoCheck;
+        static constexpr crc_t expected_check = VExpectedCheck;
 
     private:
         static constexpr crc_t msb_mask = 1 << (size - 1);
@@ -80,6 +83,8 @@ namespace crc
             return reflected;
         }
 
+        static constexpr crc_t corrected_initial = reflect_input ? reflect_crc(initial) : initial;
+
         static constexpr table_t calc_table()
         {
             table_t table{};
@@ -118,6 +123,55 @@ namespace crc
             return table;
         }
 
+        template<typename TIt>
+        static constexpr crc_t compute_checksum_core(crc_t crc, const TIt begin, const TIt end)
+        {
+            if (reflect_input)
+            {
+                for (auto it = begin; it != end; ++it)
+                {
+                    const auto data_byte = static_cast<uint8_t>(*it);
+                    const auto offs = data_byte ^ (crc & 0xFF);
+                    crc = ((crc >> 8) ^ table[offs]) & full_mask;
+                }
+            }
+            else
+            {
+                constexpr int shift = size - 8;
+                if (shift < 0)
+                {
+                    for (auto it = begin; it != end; ++it)
+                    {
+                        const auto data_byte = static_cast<uint8_t>(*it);
+                        const auto offs = data_byte ^ (crc << -shift);
+                        crc = ((crc << 8) ^ table[offs]) & full_mask;
+                    }
+                }
+                else
+                {
+                    for (auto it = begin; it != end; ++it)
+                    {
+                        const auto data_byte = static_cast<uint8_t>(*it);
+                        const auto offs = data_byte ^ (crc >> shift);
+                        crc = ((crc << 8) ^ table[offs]) & full_mask;
+                    }
+                }
+            }
+            return crc;
+        }
+
+        template<typename TIt>
+        static constexpr crc_t compute_checksum_final(crc_t crc, const TIt begin, const TIt end)
+        {
+            constexpr auto do_reflect_output = reflect_input ^ reflect_output;
+            if (do_reflect_output)
+            {
+                crc = reflect_crc(crc);
+            }
+            crc ^= final_xor;
+            return crc;
+        }
+
     public:
         static constexpr table_t table = calc_table();
 
@@ -128,8 +182,7 @@ namespace crc
 
         constexpr void reset()
         {
-            constexpr crc_t new_val = reflect_input ? reflect_crc(initial) : initial;
-            set(new_val);
+            set(corrected_initial);
         }
 
         constexpr crc_base() : current()
@@ -164,46 +217,21 @@ namespace crc
         template<typename TIt>
         crc_t compute_checksum(const TIt begin, const TIt end)
         {
-            if (reflect_input)
-            {
-                for (auto it = begin; it != end; ++it)
-                {
-                    const auto data_byte = static_cast<uint8_t>(*it);
-                    const auto offs = data_byte ^ ((current) & 0xFF);
-                    current = ((current >> 8) ^ table[offs]) & full_mask;
-                }
-            }
-            else
-            {
-                constexpr int shift = size - 8;
-                if(shift < 0)
-                {
-                    for (auto it = begin; it != end; ++it)
-                    {
-                        const auto data_byte = static_cast<uint8_t>(*it);
-                        const auto offs = data_byte ^ (current << -shift);
-                        current = ((current << 8) ^ table[offs]) & full_mask;
-                    }
-                }
-                else
-                {
-                    for (auto it = begin; it != end; ++it)
-                    {
-                        const auto data_byte = static_cast<uint8_t>(*it);
-                        const auto offs = data_byte ^ (current >> shift);
-                        current = ((current << 8) ^ table[offs]) & full_mask;
-                    }
-                }
-            }
-
-            auto result = current;
-            constexpr auto do_reflect_output = reflect_input ^ reflect_output;
-            if(do_reflect_output)
-            {
-                result = reflect_crc(result);
-            }
-            result ^= final_xor;
+            current = compute_checksum_core(current, begin, end);
+            auto result = compute_checksum_final(current, begin, end);
             return result;
         }
+
+        template<typename TIt>
+        static constexpr crc_t compute_checksum_static(const TIt begin, const TIt end)
+        {
+            auto intermediate = compute_checksum_core(corrected_initial, begin, end);
+            auto result = compute_checksum_final(intermediate, begin, end);
+            return result;
+        }
+
+        static constexpr array_wrapper<uint8_t, 9> check_input = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39 }; // 123456789 in ASCII
+        static constexpr crc_t check = compute_checksum_static(check_input.cbegin(), check_input.cend());
+        static_assert(!do_check || expected_check == check, "CRC check failed");
     };
 }
