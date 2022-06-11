@@ -52,7 +52,7 @@ namespace crc
         static constexpr uint8_t reflect_byte(uint8_t b, size_t len)
         {
             uint8_t result = 0;
-            for(auto i = 0; i < len; ++i)
+            for(size_t i = 0; i < len; ++i)
             {
                 result <<= 1;
                 result |= (b & 1);
@@ -70,7 +70,7 @@ namespace crc
         {
             size_t remaining_size = size;
             crc_t reflected = 0;
-            for(auto i = 0; i < size; i += 8)
+            for(size_t i = 0; i < size; i += 8)
             {
                 size_t len = remaining_size < 8 ? remaining_size : 8;
                 remaining_size -= len;
@@ -90,7 +90,7 @@ namespace crc
             table_t table{};
             table[0] = 0;
             crc_t crc = msb_mask;
-            for (auto i = 1; i < table_size; i <<= 1)
+            for (size_t i = 1; i < table_size; i <<= 1)
             {
                 if (crc & msb_mask)
                 {
@@ -102,7 +102,7 @@ namespace crc
                     crc <<= 1;
                 }
                 crc &= full_mask;
-                for (auto j = 0; j < i; ++j)
+                for (size_t j = 0; j < i; ++j)
                 {
                     table[i + j] = crc ^ table[j];
                 }
@@ -111,7 +111,7 @@ namespace crc
             if (reflect_input)
             {
                 table_t refl{};
-                for (auto i = 0; i < table_size; ++i)
+                for (size_t i = 0; i < table_size; ++i)
                 {
                     auto refl_offset = reflect_byte(static_cast<uint8_t>(i), 8);
                     auto refl_entry = reflect_crc(table[refl_offset]);
